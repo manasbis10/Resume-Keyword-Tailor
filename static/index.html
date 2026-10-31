@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Resume Keyword Tailor</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="frame">
+      <header>
+        <p class="eyebrow">Resume Keyword Tailor</p>
+        <h1>Fit the posting.<br />Keep your facts.</h1>
+        <p class="lede">
+          Upload your LaTeX resume and a job posting. Review small wording changes,
+          then compile your own template with its design and links intact.
+        </p>
+      </header>
+
+      <p id="setup" class="setup" role="status" hidden></p>
+      <form id="form">
+        <label class="card workflow">
+          <span class="label">Resume format</span>
+          <select id="workflow" aria-describedby="workflow-hint">
+            <option value="latex">LaTeX — preserve my template</option>
+            <option value="pdf">PDF — rebuild in the app’s layout</option>
+          </select>
+          <span id="workflow-hint" class="hint">LaTeX keeps your formatting. Only selected prose edits are applied.</span>
+        </label>
+        <div class="grid">
+          <label class="card drop" id="drop">
+            <span id="upload-label" class="label">Resume LaTeX source</span>
+            <input id="resume" name="resume" type="file" accept=".tex,text/x-tex,text/plain" aria-describedby="file-name file-limits" required />
+            <span id="file-name" class="hint">Drop a file or click to choose</span>
+            <span id="file-limits" class="hint">UTF-8 .tex file · up to 512 KB</span>
+          </label>
+
+          <label class="card">
+            <span class="label">Job posting URL</span>
+            <input
+              id="job_url"
+              name="job_url"
+              type="url"
+              maxlength="2048" placeholder="https://company.com/jobs/role"
+            />
+            <span class="hint">Public job pages only. You can also paste the description below.</span>
+          </label>
+        </div>
+
+        <div id="latex-options" class="grid extra-options">
+          <label class="card">
+            <span class="label">Supporting files (optional ZIP)</span>
+            <input id="assets" name="assets" type="file" accept=".zip,application/zip" />
+            <span class="hint">Include local classes, styles, fonts, or images using their original folder paths. Omit the main .tex. Up to 20 MB.</span>
+          </label>
+          <label class="card">
+            <span class="label">LaTeX engine</span>
+            <select id="engine" name="engine">
+              <option value="pdflatex">pdfLaTeX</option>
+              <option value="xelatex">XeLaTeX</option>
+            </select>
+            <span id="compiler-status" class="hint">Checking the compiler…</span>
+          </label>
+        </div>
+        <label class="card">
+          <span class="label">Job description</span>
+          <textarea
+            id="job_text"
+            name="job_text"
+            rows="7"
+            maxlength="24000"
+            aria-describedby="paste-hint"
+            placeholder="Paste the full posting if the URL fails or you already have the text."
+          ></textarea>
+          <span id="paste-hint" class="hint">Use a URL or paste at least 40 characters. Pasted text takes priority.</span>
+        </label>
+
+        <div class="actions">
+          <button type="submit" id="submit">Suggest text changes</button>
+          <p id="status" class="status" role="status" aria-live="polite" hidden></p>
+        </div>
+        <p class="privacy">Your resume text and job description are sent to OpenRouter and its model provider for rewriting. This app does not save uploads or generated resumes.</p>
+      </form>
+
+      <section id="latex-review" class="result" tabindex="-1" aria-labelledby="latex-title" hidden>
+        <h2 id="latex-title">Review proposed text changes</h2>
+        <p id="selection-help" class="notes">Only checked passages will change. All other source text, formatting commands, links, and sections stay intact. Check that each edit preserves the meaning.</p>
+        <p id="latex-notes" class="notes"></p>
+        <p id="no-changes" class="notes" hidden>There are no selectable changes in this result. Your source is unchanged. Check the explanation below or generate suggestions again.</p>
+        <div id="selection-controls" class="selection-controls" hidden>
+          <button id="select-all" type="button">Select all</button>
+          <button id="clear-selection" type="button">Clear selection</button>
+          <p id="selection-count" class="notes" role="status" aria-live="polite"></p>
+        </div>
+        <div id="changes"></div>
+        <details id="rejected-changes" hidden>
+          <summary id="rejected-title">Suggestions that could not be selected</summary>
+          <p class="notes">These suggestions failed preservation checks and cannot be applied. The reason for each is shown below.</p>
+          <div id="rejected-list"></div>
+        </details>
+        <button id="retry-suggestions" type="button" hidden>Generate suggestions again</button>
+        <div class="actions">
+          <button id="compile" type="button">Compile selected changes</button>
+          <p id="compile-status" class="status" role="status" aria-live="polite" hidden></p>
+        </div>
+        <div id="latex-warnings" class="setup" role="status" hidden></div>
+        <div class="pdf-comparison">
+          <div>
+            <h3>Original template</h3>
+            <p class="notes">Page previews (first three pages maximum)</p>
+            <a id="original-download" download="original.pdf">Download original PDF</a>
+            <div id="original-pdf" class="pdf-pages" aria-label="Original LaTeX resume pages"></div>
+          </div>
+          <div id="compiled-result" hidden>
+            <h3>With selected edits</h3>
+            <p id="page-count" class="notes"></p>
+            <div id="compiled-pdf" class="pdf-pages" aria-label="Resume pages with selected edits"></div>
+            <div class="actions">
+              <a id="latex-download" class="download" download>Download PDF</a>
+              <a id="tex-download" class="download" download>Download edited .tex</a>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="result" class="result" tabindex="-1" aria-labelledby="result-title" hidden>
+        <h2 id="result-title">Your tailored draft</h2>
+        <p class="notes">Compare this draft with your original. Confirm every role, skill, date, and metric before using it.</p>
+        <p id="notes" class="notes"></p>
+        <p class="label">Keywords reflected</p>
+        <ul id="keywords"></ul>
+        <p id="keyword-empty" class="notes" hidden>No supported keyword matches were reported.</p>
+        <details open>
+          <summary>Review resume text</summary>
+          <article id="preview" class="preview" aria-label="Tailored resume preview"></article>
+        </details>
+        <a id="download" class="download" download>Download PDF</a>
+      </section>
+    </div>
+    <script src="/static/latex.js"></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

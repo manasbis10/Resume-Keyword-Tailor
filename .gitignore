@@ -1,0 +1,8 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+.python-version
+.pytest_cache/
+*.pdf
+!static/.gitkeep

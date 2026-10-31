@@ -1,0 +1,31 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[margin=0.65in]{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\newcommand{\resumeItem}[1]{\item #1}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries Jane Doe}\\[3pt]
+\href{mailto:jane@example.com}{jane@example.com} $|$
+\href{https://github.com/example}{GitHub}
+\end{center}
+\section*{Experience}
+\textbf{Software Engineer, Acme}\hfill 2021--2024
+\begin{itemize}[leftmargin=*]
+\resumeItem{Designed and developed internal dashboards using Python and SQL to support operations teams and simplify daily reporting.}
+\resumeItem{Implemented checkpointing and recovery for distributed workflows, reducing redundant reprocessing by 60--70\% while improving pipeline reliability.}
+\resumeItem{Contributed to a Kafka data synchronization pipeline for consistent reporting across distributed systems.}
+\end{itemize}
+\section*{Technical Skills}
+Python, SQL, Kafka, GraphQL (familiar), Git
+\section*{Projects}
+\textbf{Peer-to-Peer File Sharing System}
+\begin{itemize}[leftmargin=*]
+\resumeItem{Designed and implemented peer discovery and parallel downloads from multiple peers in a decentralized file-sharing system.}
+\resumeItem{Applied SHA-1 hashing for chunk-level integrity verification and built concurrent transfer logic using multiple threads.}
+\end{itemize}
+\section*{Education}
+\textbf{B.S. Computer Science, Example University}\hfill 2021
+\end{document}
