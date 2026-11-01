@@ -125,8 +125,8 @@ form.addEventListener("submit", async (event) => {
   form.setAttribute("aria-busy", "true");
   try {
     if (workflow.value === "latex") {
-      await window.latexWorkflow.propose(body);
-      status("Review the suggestions below, then compile the changes you select.");
+      const proposal = await window.latexWorkflow.propose(body);
+      status(proposal.ai_status === "unavailable" ? "AI wording suggestions are unavailable. You can still select keywords below and compile." : "Review the suggestions below, then compile the changes you select.");
       return;
     }
     const response = await fetch("/api/tailor", { method: "POST", body });

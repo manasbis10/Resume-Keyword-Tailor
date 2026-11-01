@@ -85,8 +85,21 @@
       <section id="latex-review" class="result" tabindex="-1" aria-labelledby="latex-title" hidden>
         <h2 id="latex-title">Review proposed text changes</h2>
         <p id="selection-help" class="notes">Only checked passages will change. All other source text, formatting commands, links, and sections stay intact. Check that each edit preserves the meaning.</p>
+        <p id="ai-warning" class="setup" role="status" hidden></p>
         <p id="latex-notes" class="notes"></p>
-        <p id="no-changes" class="notes" hidden>There are no selectable changes in this result. Your source is unchanged. Check the explanation below or generate suggestions again.</p>
+        <section id="keyword-analysis" aria-labelledby="keyword-title" hidden>
+          <h3 id="keyword-title">Job keyword coverage</h3>
+          <p class="notes">Use the Add checkboxes to choose keywords. Keywords not currently in your CV will be added to the skills list when selected.</p>
+          <div class="keyword-table-wrap">
+            <table class="keyword-table">
+              <thead><tr><th scope="col">Accept</th><th scope="col">JD keyword</th><th scope="col">Coverage</th><th scope="col">Source evidence</th></tr></thead>
+              <tbody id="keyword-report"></tbody>
+            </table>
+          </div>
+          <p id="manual-keyword-preview" class="keyword-insertion" aria-live="polite" hidden></p>
+          <p class="hint">This checks common engineering terms and aliases, not every word in the posting.</p>
+        </section>
+        <p id="no-changes" class="notes" hidden>No wording edits were proposed. You can still select keywords in the table above or compile the original unchanged.</p>
         <div id="selection-controls" class="selection-controls" hidden>
           <button id="select-all" type="button">Select all</button>
           <button id="clear-selection" type="button">Clear selection</button>

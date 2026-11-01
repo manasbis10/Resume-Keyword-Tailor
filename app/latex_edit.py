@@ -27,6 +27,7 @@ class TextSpan:
     end: int
     text: str
     context: str
+    kind: str = "prose"
 
 
 def decode_source(data: bytes) -> str:
@@ -91,6 +92,7 @@ def editable_spans(source: str) -> list[TextSpan]:
     ordinary_item = False
     spans = []
     math = False
+    math_positions = set()
     for token in tokens:
         if token.start() < body_start + len(r"\begin{document}") or token.start() >= body_end:
             continue
@@ -103,11 +105,13 @@ def editable_spans(source: str) -> list[TextSpan]:
         if value in {r"\)", r"\]"}:
             math = False
             continue
-        if "$" in value:
+        if "$" in value and not value.startswith("\\"):
+            math_positions.add(token.start())
             if len(re.findall(r"\$\$|\$", value)) % 2:
                 math = not math
             continue
         if math:
+            math_positions.add(token.start())
             continue
         if value in BULLET_MACROS:
             pending_bullet = True
@@ -157,28 +161,91 @@ def editable_spans(source: str) -> list[TextSpan]:
         context_start, context_end = next(((a, b) for a, b in regions if a <= start < b), (start, token.end()))
         context = source[context_start:context_end]
         spans.append(TextSpan(f"text-{len(spans)}", start, start + len(text), text, context))
+    # Technical skill lists are another safe place for evidence-backed category
+    # labels, e.g. MongoDB/DynamoDB -> NoSQL databases (MongoDB, DynamoDB).
+    # Edit only plain text leaves, never category headings or formatting macros.
+    from app.keywords import skill_list
+    skills_sections = []
+    section_tokens = [t for t in tokens if t.group() in {r"\section", r"\section*"} and body_start < t.start() < body_end]
+    for section_index, section in enumerate(section_tokens):
+        following = source[section.end():]
+        heading = re.match(r"\s*\{", following)
+        if not heading:
+            continue
+        opening = section.end() + heading.end() - 1
+        closing = brace_ends.get(opening)
+        if not closing:
+            continue
+        title = re.sub(r"[^a-z]", "", source[opening:closing].casefold())
+        if "skills" in title:
+            skills_sections.append((closing, section_tokens[section_index + 1].start() if section_index + 1 < len(section_tokens) else body_end))
+    protected_arguments = []
+    protected_commands = {r"\href": 2, r"\url": 1, r"\input": 1, r"\include": 1,
+                          r"\includegraphics": 1, r"\label": 1, r"\ref": 1, r"\cite": 1,
+                          r"\section": 1, r"\section*": 1, r"\newcommand": 2, r"\renewcommand": 2}
+    for index, token in enumerate(tokens):
+        remaining = protected_commands.get(token.group(), 0)
+        end = token.end()
+        for following_index in range(index + 1, len(tokens)) if remaining else ():
+            following = tokens[following_index]
+            if following.start() < end or following.group().isspace() or following.group().startswith("%"):
+                continue
+            if following.group() != "{" or following.start() not in brace_ends:
+                break
+            end = brace_ends[following.start()]
+            protected_arguments.append((following.start(), end))
+            remaining -= 1
+            if not remaining:
+                break
+    occupied = {(span.start, span.end) for span in spans}
+    for token in tokens:
+        value = token.group()
+        if value.startswith(("\\", "%")) or value in {"{", "}"}:
+            continue
+        if not body_start < token.start() < body_end or any(c in value for c in "$&#[]"):
+            continue
+        if token.start() in math_positions or any(a <= token.start() < b for a, b in protected_arguments):
+            continue
+        start = token.start() + len(value) - len(value.lstrip())
+        text = value.strip()
+        if (start, start + len(text)) in occupied or not skill_list(text):
+            continue
+        region = next(((a, b) for a, b in regions if a <= start < b), None)
+        inside_skills = any(a <= start < b for a, b in skills_sections)
+        if not inside_skills and not (region and "technolog" in source[region[0]:region[1]].casefold()):
+            continue
+        context = source[region[0]:region[1]] if region else text
+        spans.append(TextSpan("", start, start + len(text), text, context, "skills"))
+    spans.sort(key=lambda span: span.start)
+    spans = [TextSpan(f"text-{index}", span.start, span.end, span.text, span.context, span.kind) for index, span in enumerate(spans)]
     if len(spans) > MAX_SPANS:
         raise ValueError("This source has too many editable passages. Use a shorter resume.")
     return spans
 
 
-def validate_change(before: str, after: str) -> None:
+def validate_change(before: str, after: str, context: str | None = None, kind: str = "prose") -> None:
     if not after.strip() or after != after.strip():
         raise ValueError("A replacement must contain nonempty text without outer whitespace.")
     if any(c in after for c in "\\{}%$&#_^~\r\n\x00"):
         raise ValueError("Replacements must be plain prose without LaTeX commands or special characters.")
-    if len(after) > len(before) * 1.15 + 8 or len(after) < len(before) * 0.65:
+    growth = 1.4 if kind == "skills" else 1.25
+    if len(after) > len(before) * growth + (24 if kind == "skills" else 8) or len(after) < len(before) * 0.65:
         raise ValueError("A replacement changed the passage length too much.")
     if Counter(NUMBER.findall(before)) != Counter(NUMBER.findall(after)):
         raise ValueError("A replacement changed a metric or number.")
     if Counter(m.group().casefold() for m in QUALIFIERS.finditer(before)) != Counter(m.group().casefold() for m in QUALIFIERS.finditer(after)):
         raise ValueError("A replacement changed a proficiency or scope qualifier.")
-    # Sentence-initial action verbs may change; other capitalized tokens (e.g.
-    # Python, Workday, SQL) must remain. This is deliberately conservative.
+    from app.keywords import canonical_technical_text, validate_keyword_additions
+    allowed = validate_keyword_additions(before, after, context or before)
+    # REST APIs and RESTful APIs are equivalent wording. Other original names
+    # stay intact; added labels need evidence in this same bullet or skill list.
     def names(text):
-        return Counter(m.group() for m in TECH.finditer(text) if m.start() > 0 or m.group().casefold() not in ACTION_VERBS)
-    if names(before) != names(after):
-        raise ValueError("A replacement changed a named technology or proper noun.")
+        return Counter("REST" if m.group() == "RESTful" else m.group()
+                       for m in TECH.finditer(canonical_technical_text(text)) if m.start() > 0 or m.group().casefold() not in ACTION_VERBS)
+    original_names, edited_names = names(before), names(after)
+    allowed_names = {m.group() for term in allowed for m in TECH.finditer(term)}
+    if original_names - edited_names or any(name not in allowed_names for name in edited_names - original_names):
+        raise ValueError("A replacement changed a named technology or proper noun without supporting evidence.")
 
 
 def apply_changes(source: str, changes: list[LatexChange]) -> str:
@@ -192,7 +259,7 @@ def apply_changes(source: str, changes: list[LatexChange]) -> str:
         span = spans[change.id]
         if change.before != span.text:
             raise ValueError("The source changed since the proposal. Generate suggestions again.")
-        validate_change(span.text, change.after)
+        validate_change(span.text, change.after, span.context, span.kind)
         selected.append((span, change.after))
     result = source
     for span, replacement in sorted(selected, key=lambda item: item[0].start, reverse=True):

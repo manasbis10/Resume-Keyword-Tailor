@@ -21,7 +21,7 @@ def run():
     base_url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
     source = Path("examples/resume.tex").read_text()
     spans = editable_spans(source)
-    changes = [LatexChange(id=s.id, before=s.text, after=s.text.replace("Designed", "Engineered"), reason="Clearer wording without changing experience.").model_dump() for s in (spans[0], spans[3])]
+    changes = [LatexChange(id=s.id, before=s.text, after=s.text.replace("Designed", "Engineered"), reason="Clearer wording without changing experience.").model_dump() for s in (spans[0], next(span for span in spans if span.text.startswith("Designed and implemented")))]
     original = compile_latex(source, {}, "resume.tex")
     proposal = {"changes": changes, "notes": "All skills, qualifiers, and project bullets remain in place.", "original_pdf_base64": base64.b64encode(original.pdf).decode(), "original_pages": 1, "original_preview": preview_pages(original.pdf)}
     with sync_playwright() as p:

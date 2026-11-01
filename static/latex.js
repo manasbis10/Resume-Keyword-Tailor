@@ -9,6 +9,7 @@ window.latexWorkflow = (() => {
   let originalUrl;
   let compiledUrl;
   let texUrl;
+  const keywordSelections = new Map();
 
   function pdfBlob(encoded) {
     const bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
@@ -23,11 +24,18 @@ window.latexWorkflow = (() => {
     compiledUrl = texUrl = undefined;
     document.getElementById("latex-warnings").hidden = true;
     compileStatus.hidden = true;
+    if (proposal) showKeywordReport(proposal.keyword_report || []);
   }
   function clear() {
     review.hidden = true;
     list.replaceChildren();
     input = proposal = undefined;
+    document.getElementById("ai-warning").hidden = true;
+    document.getElementById("ai-warning").textContent = "";
+    keywordSelections.clear();
+    document.getElementById("manual-keyword-preview").hidden = true;
+    document.getElementById("keyword-analysis").hidden = true;
+    document.getElementById("keyword-report").replaceChildren();
     document.getElementById("selection-controls").hidden = true;
     document.getElementById("rejected-changes").hidden = true;
     document.getElementById("rejected-list").replaceChildren();
@@ -60,11 +68,105 @@ window.latexWorkflow = (() => {
       container.append(image);
     }
   }
+  function selectedChanges() {
+    if (!proposal) return [];
+    return [...list.querySelectorAll("input:checked")].flatMap(el => {
+      const change = proposal.changes[Number(el.dataset.index)];
+      const terms = (change.keywords_added || []).filter(term => keywordSelections.get(term) !== false);
+      const { keyword_variants, ...payload } = change;
+      if (keyword_variants?.length) {
+        if (!terms.length) return [];
+        const variant = keyword_variants.find(item => item.keywords.length === terms.length && item.keywords.every(term => terms.includes(term)));
+        return variant ? [{ ...payload, after: variant.after, keywords_added: terms }] : [];
+      }
+      if ((change.keywords_added || []).some(term => keywordSelections.get(term) === false)) return [];
+      return [payload];
+    });
+  }
+  function selectedNewKeywords() {
+    if (!proposal) return [];
+    return (proposal.keyword_report || [])
+      .filter(item => item.status !== "present" && !proposal.changes.some(change => change.keywords_added?.includes(item.keyword)) && keywordSelections.get(item.keyword) === true)
+      .map(item => item.keyword);
+  }
+  function chooseKeyword(term, checked) {
+    keywordSelections.set(term, checked);
+    for (const [index, change] of proposal.changes.entries()) {
+      if (!change.keywords_added?.includes(term)) continue;
+      const parent = document.getElementById(`change-${index}`);
+      if (change.keyword_variants?.length) {
+        parent.checked = change.keywords_added.some(word => keywordSelections.get(word) !== false);
+      } else {
+        // A prose rewrite can be indivisible; accepting its keyword accepts the
+        // displayed rewrite, and rejecting it excludes that whole rewrite.
+        parent.checked = checked;
+        for (const word of change.keywords_added) keywordSelections.set(word, checked);
+      }
+    }
+    selectionChanged();
+  }
+  function showKeywordReport(report, compiled = false) {
+    const table = document.getElementById("keyword-report");
+    table.replaceChildren();
+    document.getElementById("keyword-analysis").hidden = !report.length;
+    const selectedTerms = new Set([...selectedChanges().flatMap(change => change.keywords_added || []), ...selectedNewKeywords()]);
+    for (const [index, item] of report.entries()) {
+      const row = document.createElement("tr");
+      const choices = proposal?.changes.filter(change => change.keywords_added?.includes(item.keyword)) || [];
+      const selectCell = document.createElement("td");
+      if (choices.length || item.status !== "present") {
+        const label = document.createElement("label");
+        label.className = "keyword-choice";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.id = `keyword-${index}`;
+        checkbox.dataset.keyword = item.keyword;
+        checkbox.dataset.manual = String(!choices.length);
+        checkbox.setAttribute("aria-label", `Add ${item.keyword}`);
+        checkbox.checked = selectedTerms.has(item.keyword);
+        checkbox.addEventListener("change", () => chooseKeyword(item.keyword, checkbox.checked));
+        label.append(checkbox);
+        text(label, "span", "Add");
+        selectCell.append(label);
+        if (choices.some(change => !change.keyword_variants?.length)) {
+          label.title = "This keyword is part of the wording edit shown below. Toggling it accepts or rejects that edit.";
+        }
+      } else {
+        selectCell.textContent = "Already included";
+      }
+      row.append(selectCell);
+      let coverage;
+      if (compiled) {
+        coverage = item.added ? "Added to compiled resume" : item.in_output ? "Present in compiled resume" : item.status === "missing" ? "Not added" : "Supported, but not added";
+      } else {
+        coverage = item.status === "present" ? "Already present" : selectedTerms.has(item.keyword) ? "Selected for addition" : item.status === "supported" ? "Supported — not selected" : "Not currently listed";
+      }
+      row.className = "";
+      text(row, "td", item.keyword);
+      text(row, "td", coverage);
+      text(row, "td", item.evidence || "Not currently listed");
+      table.append(row);
+    }
+  }
   function updateSelection() {
-    const count = list.querySelectorAll("input:checked").length;
-    const total = list.querySelectorAll("input").length;
+    const selected = selectedChanges();
+    const newKeywords = selectedNewKeywords();
+    const count = selected.length + newKeywords.length;
+    for (const [index, change] of (proposal?.changes || []).entries()) {
+      const card = list.querySelector(`[data-change-index="${index}"]`);
+      if (!card || !change.keyword_variants?.length) continue;
+      const active = selected.find(item => item.id === change.id);
+      card.querySelector(".after").textContent = active?.after || change.before;
+      const keywords = card.querySelector(".keyword-insertion");
+      if (keywords) keywords.textContent = active ? `Keywords selected here: ${active.keywords_added.join(", ")}` : "No keyword additions selected for this passage.";
+    }
+    const total = list.querySelectorAll("input").length + (proposal?.keyword_report || []).filter(item => item.status !== "present" && !proposal.changes.some(change => change.keywords_added?.includes(item.keyword))).length;
     document.getElementById("selection-count").textContent = `${count} of ${total} changes selected`;
+    const manualPreview = document.getElementById("manual-keyword-preview");
+    manualPreview.hidden = !newKeywords.length;
+    manualPreview.textContent = newKeywords.length ? `Add to skills: ${newKeywords.join(", ")}` : "";
     compileButton.textContent = count ? `Compile ${count} selected change${count === 1 ? "" : "s"}` : "Compile original unchanged";
+    if (proposal) showKeywordReport(proposal.keyword_report || []);
   }
   function selectionChanged() {
     clearCompiled();
@@ -73,6 +175,7 @@ window.latexWorkflow = (() => {
   for (const [id, checked] of [["select-all", true], ["clear-selection", false]]) {
     document.getElementById(id).addEventListener("click", () => {
       for (const checkbox of list.querySelectorAll("input")) checkbox.checked = checked;
+      for (const term of keywordSelections.keys()) keywordSelections.set(term, checked);
       selectionChanged();
     });
   }
@@ -84,25 +187,34 @@ window.latexWorkflow = (() => {
     if (!Array.isArray(data.changes) || !data.original_pdf_base64) throw new Error("The proposal is incomplete. Please try again.");
     input = body;
     proposal = data;
+    document.getElementById("ai-warning").hidden = !data.ai_warning;
+    document.getElementById("ai-warning").textContent = data.ai_warning || "";
+    keywordSelections.clear();
+    for (const item of data.keyword_report || []) keywordSelections.set(item.keyword, false);
+    for (const change of data.changes) for (const term of change.keywords_added || []) keywordSelections.set(term, true);
     document.getElementById("latex-notes").textContent = data.notes || "";
     document.getElementById("no-changes").hidden = Boolean(data.changes.length);
-    document.getElementById("selection-controls").hidden = !data.changes.length;
+    document.getElementById("selection-controls").hidden = !data.changes.length && !(data.keyword_report || []).some(item => item.status !== "present");
     document.getElementById("retry-suggestions").hidden = Boolean(data.changes.length);
     document.getElementById("selection-help").textContent = data.changes.length
       ? "Select the wording changes to apply. All other source text, formatting commands, links, and sections stay intact."
-      : "The model returned no changes that can be applied. This result can compile your original template unchanged.";
+      : "Select keywords in the coverage table to add to your skills, or compile the original unchanged.";
     originalUrl = pdfBlob(data.original_pdf_base64);
     showPages("original-pdf", data.original_preview, "Original resume");
     document.getElementById("original-download").href = originalUrl;
     for (const [i, change] of data.changes.entries()) {
       const card = document.createElement("div");
       card.className = "change-card";
+      card.dataset.changeIndex = String(i);
       const label = document.createElement("label");
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.checked = true;
       checkbox.dataset.index = String(i);
-      checkbox.addEventListener("change", selectionChanged);
+      checkbox.addEventListener("change", () => {
+        for (const term of change.keywords_added || []) keywordSelections.set(term, checkbox.checked);
+        selectionChanged();
+      });
       checkbox.id = `change-${i}`;
       label.htmlFor = checkbox.id;
       label.append(checkbox);
@@ -113,6 +225,7 @@ window.latexWorkflow = (() => {
       text(card, "p", "Proposed", "label");
       text(card, "p", change.after, "after");
       if (change.reason) text(card, "p", change.reason, "notes");
+      if (change.keywords_added?.length) text(card, "p", `Keywords added here: ${change.keywords_added.join(", ")}`, "keyword-insertion");
       list.append(card);
     }
     const rejected = data.rejected_changes || [];
@@ -135,6 +248,7 @@ window.latexWorkflow = (() => {
     updateSelection();
     review.hidden = false;
     review.focus();
+    return data;
   }
   compileButton.addEventListener("click", async () => {
     if (!input || !proposal) return;
@@ -143,9 +257,11 @@ window.latexWorkflow = (() => {
     for (const [key, value] of input.entries()) {
       if (["resume", "assets", "engine"].includes(key)) body.append(key, value);
     }
-    const selected = [...list.querySelectorAll("input:checked")].map((el) => proposal.changes[Number(el.dataset.index)]);
+    const selected = selectedChanges();
     body.set("changes", JSON.stringify(selected));
-    const controls = [...document.querySelectorAll("#form input, #form select, #form textarea, #form button, #changes input, #compile, #select-all, #clear-selection, #retry-suggestions")];
+    body.set("added_keywords", JSON.stringify(selectedNewKeywords()));
+    body.set("keyword_terms", JSON.stringify((proposal.keyword_report || []).map(item => item.keyword)));
+    const controls = [...document.querySelectorAll("#form input, #form select, #form textarea, #form button, #changes input, #keyword-report input, #compile, #select-all, #clear-selection, #retry-suggestions")];
     const disabled = controls.map((el) => el.disabled);
     controls.forEach((el) => { el.disabled = true; });
     compileStatus.hidden = false;
@@ -169,7 +285,8 @@ window.latexWorkflow = (() => {
       for (const warning of data.warnings || []) text(warnings, "p", warning);
       warnings.hidden = !data.warnings?.length;
       document.getElementById("compiled-result").hidden = false;
-      compileStatus.textContent = `Applied ${data.applied_changes} selected change(s). Review the PDF before downloading.`;
+      showKeywordReport(data.keyword_report || [], true);
+      compileStatus.textContent = `Applied ${data.applied_changes} selected change(s).${data.added_keywords?.length ? ` Added ${data.added_keywords.length} keyword(s) to skills.` : ""} Review the PDF before downloading.`;
     } catch (error) {
       compileStatus.classList.add("error");
       compileStatus.textContent = error instanceof TypeError ? "Could not reach the server. Please try again." : error.message;

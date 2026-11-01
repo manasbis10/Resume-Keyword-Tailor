@@ -228,3 +228,13 @@ select { width: 100%; background: transparent; color: var(--ink); font: inherit;
 .rejected-card { border-left: 3px solid var(--rule); }
 .rejection-reason { font-weight: bold; }
 #retry-suggestions { margin-top: 1rem; }
+
+.keyword-table-wrap { overflow-x: auto; margin: 1rem 0; }
+.keyword-table { width: 100%; border-collapse: collapse; background: var(--card); font-size: .9rem; line-height: 1.4; }
+.keyword-table th, .keyword-table td { padding: .7rem; text-align: left; border-bottom: 1px solid rgba(28,25,21,.13); vertical-align: top; }
+.keyword-table th { font-family: "Segoe UI", Helvetica, sans-serif; font-weight: 600; }
+.keyword-gap td:nth-child(2) { color: #8a2a12; }
+.keyword-insertion { font: 600 .85rem/1.5 "Segoe UI", Helvetica, sans-serif; color: var(--rule); }
+
+.keyword-choice { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.75rem; cursor: pointer; white-space: nowrap; }
+.keyword-choice input { width: 1.2rem; height: 1.2rem; accent-color: var(--rule); cursor: pointer; }

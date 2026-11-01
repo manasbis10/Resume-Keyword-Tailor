@@ -30,8 +30,10 @@ def test_exact_patch_preserves_all_other_bytes(source):
 
 def test_only_supported_prose_is_editable(source):
     spans = editable_spans(source)
-    assert len(spans) == 5
-    assert all("jane@example" not in span.text and "familiar" not in span.text for span in spans)
+    assert len(spans) == 6
+    assert all("jane@example" not in span.text for span in spans)
+    assert len([span for span in spans if span.kind == "skills"]) == 1
+    assert all("familiar" not in span.text for span in spans if span.kind == "prose")
     assert all(source[span.start:span.end] == span.text for span in spans)
 
 

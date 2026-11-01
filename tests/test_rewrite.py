@@ -70,3 +70,42 @@ def test_rate_limit_not_retried(monkeypatch):
         rewrite.tailor_resume(SOURCE, "Python engineer")
     client.chat.completions.create.assert_called_once()
     client.close.assert_called_once()
+
+
+def test_invalid_json_tries_free_fallback(monkeypatch, tailored):
+    monkeypatch.setenv('OPENROUTER_MODEL', 'preferred:free')
+    client = Mock()
+    invalid = SimpleNamespace(model='preferred:free', choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content='not JSON'))])
+    client.chat.completions.create.side_effect = [invalid, completion(tailored)]
+    monkeypatch.setattr(rewrite, '_client', lambda: client)
+    result = rewrite.tailor_resume(SOURCE, 'Python engineer')
+    assert result.name == 'Jane Doe'
+    assert client.chat.completions.create.call_count == 2
+    client.close.assert_called_once()
+
+
+def test_truncated_preferred_response_tries_free_fallback(monkeypatch, tailored):
+    monkeypatch.setenv('OPENROUTER_MODEL', 'preferred:free')
+    client = Mock()
+    client.chat.completions.create.side_effect = [completion(tailored, 'length'), completion(tailored)]
+    monkeypatch.setattr(rewrite, '_client', lambda: client)
+    assert rewrite.tailor_resume(SOURCE, 'Python engineer').name == 'Jane Doe'
+    assert client.chat.completions.create.call_count == 2
+
+
+def test_empty_response_has_typed_reason(monkeypatch):
+    monkeypatch.setenv('OPENROUTER_MODEL', 'openrouter/free')
+    client = Mock()
+    client.chat.completions.create.return_value = SimpleNamespace(model='test', choices=[])
+    monkeypatch.setattr(rewrite, '_client', lambda: client)
+    with pytest.raises(rewrite.ModelResponseError) as caught:
+        rewrite._generate_json('Return JSON', 'test')
+    assert caught.value.code == 'empty'
+    client.close.assert_called_once()
+
+
+def test_complete_json_can_be_used_if_provider_omits_finish_reason(monkeypatch, tailored):
+    client = Mock()
+    client.chat.completions.create.return_value = completion(tailored, None)
+    monkeypatch.setattr(rewrite, '_client', lambda: client)
+    assert rewrite.tailor_resume(SOURCE, 'Python engineer').name == 'Jane Doe'

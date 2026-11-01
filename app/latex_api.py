@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 from contextlib import contextmanager
 
@@ -14,8 +15,9 @@ from app.extract import extract_job_from_url
 from app.latex_build import MAX_ASSET_BYTES, CompilationError, CompilerUnavailable, compile_latex, compiler_status, layout_warnings, unpack_assets
 from app.latex_edit import MAX_SOURCE_BYTES, apply_changes, decode_source, editable_spans
 from app.models import LatexChange
+from app.keywords import add_selected_skills, coverage_report, report_for_terms
 from app.latex_preview import preview_pages
-from app.rewrite import propose_latex
+from app.rewrite import ProposalInputError, propose_latex
 
 router = APIRouter(prefix="/api/latex", tags=["LaTeX"])
 
@@ -77,6 +79,8 @@ def propose(
         baseline = compile_latex(source, support, name, engine)
     try:
         proposal = propose_latex(source, job)
+    except ProposalInputError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except AuthenticationError as exc:
         raise HTTPException(503, "OpenRouter rejected the API key. Check the server configuration.") from exc
     except RateLimitError as exc:
@@ -95,6 +99,8 @@ def compile_approved(
     resume: UploadFile = File(...),
     assets: UploadFile | None = File(None),
     changes: str = Form("[]", max_length=120000),
+    keyword_terms: str = Form("[]", max_length=8000),
+    added_keywords: str = Form("[]", max_length=8000),
     engine: str = Form("pdflatex"),
 ):
     with compile_errors():
@@ -103,14 +109,26 @@ def compile_approved(
             approved = TypeAdapter(list[LatexChange]).validate_json(changes)
         except ValidationError as exc:
             raise ValueError("The approved changes are invalid. Generate suggestions again.") from exc
+        try:
+            terms = json.loads(keyword_terms)
+            selected_skills = json.loads(added_keywords)
+        except ValueError as exc:
+            raise ValueError("Invalid keyword list.") from exc
+        if not isinstance(terms, list) or len(terms) > 100 or any(not isinstance(term, str) for term in terms):
+            raise ValueError("Invalid keyword list.")
+        if not isinstance(selected_skills, list) or len(selected_skills) > 100 or any(not isinstance(term, str) for term in selected_skills):
+            raise ValueError("Invalid selected keyword list.")
         if len(approved) > 160:
             raise ValueError("Too many changes.")
         edited_source = apply_changes(source, approved)
+        edited_source, additions = add_selected_skills(edited_source, selected_skills)
         baseline = compile_latex(source, support, name, engine)
-        edited = compile_latex(edited_source, support, name, engine) if approved else baseline
+        edited = compile_latex(edited_source, support, name, engine) if edited_source != source else baseline
     return {"filename": f"{name[:-4]}-tailored.pdf", "tex_filename": f"{name[:-4]}-tailored.tex",
             "pdf_base64": base64.b64encode(edited.pdf).decode("ascii"),
             "original_pdf_base64": base64.b64encode(baseline.pdf).decode("ascii"),
             "preview": preview_pages(edited.pdf),
             "tex_source": edited_source, "original_pages": baseline.pages, "pages": edited.pages,
-            "applied_changes": len(approved), "warnings": layout_warnings(baseline, edited)}
+            "applied_changes": len(approved), "added_keywords": additions,
+            "keyword_report": coverage_report(report_for_terms(source, terms), source, edited_source),
+            "warnings": layout_warnings(baseline, edited)}
